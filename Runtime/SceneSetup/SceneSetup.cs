@@ -1,5 +1,4 @@
 ﻿using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class SceneSetup : MonoBehaviour
@@ -10,13 +9,36 @@ public class SceneSetup : MonoBehaviour
 
     private void Awake()
     {
-        if (BootLoader.NextSceneName == gameObject.scene.name)
-            ActiveSceneSetup = this;
-
         if (_sceneSetupConfig != null)
         {
             _sceneSetupConfig.OnAwake();
+        }
+
+        Bootstrap();
+    }
+
+    private void Start()
+    {
+        if (_sceneSetupConfig != null)
+        {
             _sceneSetupConfig.OnStart();
+        }
+    }
+
+    public void Bootstrap()
+    {
+        StartCoroutine(CoWaitForSceneLoad());
+
+        IEnumerator CoWaitForSceneLoad()
+        {
+            while (!gameObject.scene.isLoaded)
+                yield return 0;
+
+            Debug.Log("Scene loaded!");
+            if (gameObject.scene.name == BootLoader.NextActiveSceneName)
+            {
+                ActiveSceneSetup = this;
+            }
         }
     }
 }

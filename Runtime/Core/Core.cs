@@ -1,18 +1,25 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.SceneManagement;
 
 public class Core : MonoBehaviour
 {
+    private static bool _applicationIsFocus = false;
+    private static bool _applicationIsPaused = false;
+    private static bool _applicationIsQuitting = false;
     private static bool _initialized = false;
     private const string CORE_SCENE_NAME = "CORE";
+
+
+    public static readonly ProcessorUpdate Updater = new ProcessorUpdate();
+    public static bool ApplicationIsFocus => _applicationIsFocus;
+    public static bool ApplicationIsPaused => _applicationIsPaused;
+    public static bool ApplicationIsQuitting => _applicationIsQuitting;
+
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     public static void Bootstrap()
     {
         if (_initialized) return;
-
         SetupCore();
         SetupManagers();
         SetupApplicationSettings();
@@ -49,5 +56,22 @@ public class Core : MonoBehaviour
 
     private static void SetupManagers()
     {
+    }
+
+    private void OnApplicationQuit()
+    {
+        _applicationIsQuitting = true;
+    }
+
+    private void OnApplicationPause(bool pause)
+    {
+        //Если игра скрыта или частично перекрыта другим приложением, то вернет true
+        _applicationIsPaused = pause;
+    }
+
+    private void OnApplicationFocus(bool focus)
+    {
+        //(Android) При открытой клавиатуре вызывает false
+        _applicationIsFocus = focus;
     }
 }
