@@ -1,28 +1,34 @@
 ﻿using System.Collections;
 using UnityEngine;
 
+[DefaultExecutionOrder(-10200)]
 public class SceneSetup : MonoBehaviour
 {
-    public static SceneSetup ActiveSceneSetup;
+    private static SceneSetup _activeSceneSetup;
+    public readonly DependencyContainer Container = new DependencyContainer(20);
+    public readonly ProcessorUpdate Engine = new ProcessorUpdate();
+    //ProcessorRoutine
 
-    [SerializeField] private SetupConfig _sceneSetupConfig = null;
+    [SerializeField] private SceneSetupConfig _sceneSetupConfig = null;
+
+    public static SceneSetup ActiveSceneSetup => _activeSceneSetup;
+    public static DependencyContainer ActiveSceneDependencyContainer => ActiveSceneSetup.Container;
 
     private void Awake()
     {
-        if (_sceneSetupConfig != null)
-        {
-            _sceneSetupConfig.OnAwake();
-        }
-
         Bootstrap();
+
+        if (_activeSceneSetup == null)
+            _activeSceneSetup = this;
+
+        if (_sceneSetupConfig != null)
+            _sceneSetupConfig.OnAwake(this);
     }
 
     private void Start()
     {
         if (_sceneSetupConfig != null)
-        {
             _sceneSetupConfig.OnStart();
-        }
     }
 
     public void Bootstrap()
@@ -37,8 +43,17 @@ public class SceneSetup : MonoBehaviour
             Debug.Log("Scene loaded!");
             if (gameObject.scene.name == BootLoader.NextActiveSceneName)
             {
-                ActiveSceneSetup = this;
+                _activeSceneSetup = this;
             }
         }
+    }
+
+    private void OnDisable()
+    {
+        Engine.Dispose();
+        //ProcessorRoutine.Dispose();
+
+        if (_sceneSetupConfig != null)
+            _sceneSetupConfig.OnDispose();
     }
 }

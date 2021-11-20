@@ -156,7 +156,7 @@ public class ProcessorUpdate
         }
     }
 
-    internal void Dispose()
+    public void Dispose()
     {
         _countTicks = 0;
         _countTicksLate = 0;

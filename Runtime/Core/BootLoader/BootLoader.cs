@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -18,32 +19,39 @@ public class BootLoader : MonoBehaviour
 
     //Количество ссыланий на сцену
     //int = sceneHashCode, int = количество ссылок на сцену
-    private static Dictionary<int, int> _sceneReferences = new Dictionary<int, int>(5);
+    private static Dictionary<string, SceneData> _sceneReferences = new Dictionary<string, SceneData>(5);
     private static List<SceneCollectionObject> _loadedSceneCollections = new List<SceneCollectionObject>(3);
     private static List<AsyncOperation> _loadJobs = new List<AsyncOperation>();
 
     public static Action OnStartLoading;
     public static Action OnEndLoading;
+    //public static Action<string> OnSceneUnload = delegate { };
     public static Action<float> OnSceneLoading = delegate { };
     public static string NextActiveSceneName => _nextActiveSceneName;
+
+    private static Scene _bootScene;
 
     private void Update()
     {
         HandleLoadingProgress();
     }
 
+    #region LOAD_SCENE_COLLECTION
     public static void LoadSceneCollection(SceneCollectionObject sceneCollector)
     {
-        //Выгружает все коллекции сцен
-        for (int i = 0; i < _loadedSceneCollections.Count; i++)
-        {
-            UnloadSceneCollector(_loadedSceneCollections[i]);
-        }
-
+        UnloadAllCollectionsExcept();
         AddSceneCollection(sceneCollector);
     }
 
-    public static void LoadSceneCollcection(string nameSceneCollection)
+    public static void LoadSceneCollection(SceneCollectionObject sceneCollector, Scene bootScene)
+    {
+        _bootScene = bootScene;
+        OnEndLoading += UnloadBootScene;
+
+        LoadSceneCollection(sceneCollector);
+    }
+
+    public static void LoadSceneCollection(string nameSceneCollection)
     {
         SceneCollectionObject sceneCollectionObject = GetSceneCollection(nameSceneCollection);
 
@@ -57,6 +65,24 @@ public class BootLoader : MonoBehaviour
             Debug.LogError("[BootLoader]: Нужная SceneCollectionObject не найдена!");
         }
 #endif
+    }
+
+    public static void LoadSceneCollectionWithSaveRepeatingScenes(SceneCollectionObject sceneCollector)
+    {
+        SaveLoadedScene(sceneCollector);
+        UnloadAllCollectionsExcept();
+        AddSceneCollection(sceneCollector);
+    }
+    #endregion
+
+    private static void UnloadAllCollectionsExcept()
+    {
+        for (int i = 0; i < _loadedSceneCollections.Count; i++)
+        {
+            UnloadSceneCollector(_loadedSceneCollections[i]);
+        }
+
+        UnloadUnusedAssets();
     }
 
     public static void AddSceneCollection(SceneCollectionObject sceneCollector)
@@ -101,7 +127,6 @@ public class BootLoader : MonoBehaviour
             Remove(sceneMane);
         }
         _loadedSceneCollections.Remove(sceneCollector);
-        UnloadUnusedAssets();
 
         if (_loadedSceneCollections.Count <= 0)
             _nextActiveSceneName = null;
@@ -109,29 +134,38 @@ public class BootLoader : MonoBehaviour
 
     private static void Remove(string sceneName)
     {
-        int sceneHash = sceneName.GetHashCode();
-        if (_sceneReferences.ContainsKey(sceneHash))
+        if (_sceneReferences.ContainsKey(sceneName))
         {
-            if (_sceneReferences[sceneHash] == 1)
+            if (_sceneReferences[sceneName].CountReference <= 1)
             {
-                _sceneReferences.Remove(sceneHash);
-                AsyncOperation removingScene = SceneManager.UnloadSceneAsync(sceneName);
-                removingScene.allowSceneActivation = false;
-                _loadJobs.Add(removingScene);
+                if (_sceneReferences[sceneName].DontUnload == false)
+                {
+                    //OnSceneUnload.Invoke(sceneName);
+                    AsyncOperation removingScene = SceneManager.UnloadSceneAsync(sceneName);
+                    removingScene.allowSceneActivation = false;
+                    _loadJobs.Add(removingScene);
+                    _sceneReferences.Remove(sceneName);
+                }
+                else
+                {
+                    _sceneReferences[sceneName].DontUnload = false;
+                }
             }
             else
             {
-                _sceneReferences[sceneHash]--;
+                _sceneReferences[sceneName].CountReference--;
             }
         }
     }
 
     private static void Add(string sceneName)
     {
-        int sceneHash = sceneName.GetHashCode();
-        if (_sceneReferences.ContainsKey(sceneHash))
+        if (_sceneReferences.ContainsKey(sceneName))
         {
-            _sceneReferences[sceneHash]++;
+            if (_sceneReferences[sceneName].CountReference > 0)
+            {
+                _sceneReferences[sceneName].CountReference++;
+            }
         }
         else
         {
@@ -141,7 +175,7 @@ public class BootLoader : MonoBehaviour
                 AsyncOperation loadingScene = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Additive);
                 loadingScene.allowSceneActivation = false;
                 _loadJobs.Add(loadingScene);
-                _sceneReferences.Add(sceneHash, 1);
+                _sceneReferences.Add(sceneName, new SceneData(1));
             }
         }
     }
@@ -153,6 +187,7 @@ public class BootLoader : MonoBehaviour
         float progress = 0f;
         for (int i = 0; i < _loadJobs.Count; i++)
         {
+            //Debug.Log(_loadJobs[i].progress + " / " + i);
             progress += _loadJobs[i].progress;
         }
 
@@ -160,8 +195,10 @@ public class BootLoader : MonoBehaviour
 
         OnSceneLoading(ratio);
 
+        //Debug.Log("Ratio: " + ratio + " / Count: " + _loadJobs.Count);
         if (ratio >= 0.9f)
         {
+            //Debug.Log("Zashel");
             for (var i = 0; i < _loadJobs.Count; i++)
             {
                 _loadJobs[i].allowSceneActivation = true;
@@ -177,10 +214,32 @@ public class BootLoader : MonoBehaviour
 
     private static void UnloadUnusedAssets()
     {
-        //Выгружает неиспользуемые ассеты
         AsyncOperation unloadUnusedAssetsOperation = Resources.UnloadUnusedAssets();
         unloadUnusedAssetsOperation.allowSceneActivation = false;
         _loadJobs.Add(unloadUnusedAssetsOperation);
+    }
+
+    private static void UnloadBootScene()
+    {
+        if (_bootScene != default)
+        {
+            AsyncOperation asyncOperation = SceneManager.UnloadSceneAsync(_bootScene);
+            asyncOperation.allowSceneActivation = false;
+            _bootScene = default;
+        }
+        OnEndLoading -= UnloadBootScene;
+    }
+
+    private static void SaveLoadedScene(SceneCollectionObject sceneCollector)
+    {
+        for (int i = 0; i < sceneCollector.scenes.Length; i++)
+        {
+            string sceneName = System.IO.Path.GetFileNameWithoutExtension(sceneCollector.scenes[i].ScenePath);
+            if (_sceneReferences.ContainsKey(sceneName))
+            {
+                _sceneReferences[sceneName].DontUnload = true;
+            }
+        }
     }
 
     private static State CheckSceneState(string sceneName)
@@ -212,5 +271,17 @@ public class BootLoader : MonoBehaviour
         }
 
         return sceneColectionNames;
+    }
+
+    private class SceneData
+    {
+        public bool DontUnload;
+        public int CountReference;
+
+        public SceneData(int countReference)
+        {
+            CountReference = countReference;
+            DontUnload = false;
+        }
     }
 }
